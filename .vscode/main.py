@@ -141,8 +141,8 @@ class thermography_setup:
 
 #------------------------------------------------------------------ Class instance initialization-----------------
 
-hyperspectral_mode=False
-thermography_mode=True
+hyperspectral_mode=True
+thermography_mode=False
 
 period_time=20 #Time of halogen lamps flash [s]
 time_for_camera_initialization = 30#Time required for camera initialization [s] (Value for 2500 frames is 30) 
