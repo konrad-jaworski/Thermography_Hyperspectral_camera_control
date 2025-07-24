@@ -14,6 +14,56 @@
 #include <sstream>
 
 
+
+bool sendAndReceive(const std::string& portName, const std::string& message) {
+    HANDLE hSerial = CreateFileA(portName.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (hSerial == INVALID_HANDLE_VALUE) {
+        std::cerr << "Failed to open serial port\n";
+        return false;
+    }
+
+    DCB dcb = { 0 };
+    dcb.DCBlength = sizeof(dcb);
+    GetCommState(hSerial, &dcb);
+    dcb.BaudRate = CBR_115200;
+    dcb.ByteSize = 8;
+    dcb.StopBits = ONESTOPBIT;
+    dcb.Parity = NOPARITY;
+    SetCommState(hSerial, &dcb);
+
+    COMMTIMEOUTS timeouts = { 0 };
+    timeouts.ReadIntervalTimeout = 50;
+    timeouts.ReadTotalTimeoutConstant = 100;
+    timeouts.ReadTotalTimeoutMultiplier = 10;
+    SetCommTimeouts(hSerial, &timeouts);
+
+    PurgeComm(hSerial, PURGE_RXCLEAR | PURGE_TXCLEAR);
+
+    DWORD bytesWritten = 0;
+    BOOL success = WriteFile(hSerial, message.c_str(), message.length(), &bytesWritten, NULL);
+    if (!success || bytesWritten != message.length()) {
+        std::cerr << "Write error\n";
+        CloseHandle(hSerial);
+        return false;
+    }
+
+    Sleep(500);  // Wait for Pico to respond
+
+    char buffer[256] = { 0 };
+    DWORD bytesRead = 0;
+    if (ReadFile(hSerial, buffer, sizeof(buffer) - 1, &bytesRead, NULL)) {
+        buffer[bytesRead] = '\0';
+        std::cout << "Received: " << buffer << std::endl;
+    }
+    else {
+        std::cerr << "No response.\n";
+    }
+
+    CloseHandle(hSerial);
+    return true;
+}
+
+
 std::string currentDateTimeString() {
     auto now = std::chrono::system_clock::now();
     std::time_t now_c = std::chrono::system_clock::to_time_t(now);
@@ -41,6 +91,12 @@ void saveBinaryTemperatureData(const std::vector<float>& temperatures, const std
 int main()
 {
     std::cout << "Integration of Workswell camera\n";
+
+    std::string port = "\\\\.\\COM3";  // COM3 escape format for Windows
+    std::string msg = "ping\n";
+
+    sendAndReceive(port, msg);
+
 
     std::string license_path = "C:/Users/stone/source/repos/Workswell_implementation_mk3/license_332C2309.wlic";
     wic::LicenseFile license(license_path.c_str());

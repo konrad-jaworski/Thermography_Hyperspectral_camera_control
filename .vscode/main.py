@@ -1,9 +1,12 @@
-from machine import Pin,I2C
+import sys
+from machine import Pin, I2C
 import time
+
+# ---- (StepperMotor, AS5600 classes) ----
 
 class StepperMotor:
     """
-    This class bla bla bla
+    Class used to control motion of the stepper motors.
     """
     def __init__(self, step_pin, dir_pin, step_delay_us,ms1,ms2,ms3):
         self.STEP = Pin(step_pin, Pin.OUT)
@@ -70,6 +73,9 @@ class StepperMotor:
 
 
 class AS5600:
+    """
+    Class which handles read out of the AS5600 encoders 
+    """
     def __init__(self, i2c, addr=0x36):
         self.i2c = i2c
         self.addr = addr
@@ -88,124 +94,95 @@ class AS5600:
         if raw is not None:
             return (raw / 4096) * 360.0
         return None
-    
 
-class thermography_setup:
-    def __init__(self,relay_pin):
-        self.relay=Pin(relay_pin,Pin.OUT)
+# ---- (Lower_gear_pos, Upper_gear_pos) ----
 
-
-    # Function to send a message with start and end markers
-    def send_message(self,message):
-        print(f"<{message}>")  # Send message with markers
-
-
-    def halogen_lamp(self,period_time):
-        self.relay.high()  # Turn ON the relay
-        time.sleep(period_time)   # Wait for X [seconds]
-        self.relay.low()  # Turn OFF the relay
-
-    def demo(self,motor_top,motor_bottom,top_filter,bottom_filter,encoder_top,encoder_bottom):
-        for i in range(top_filter):
-            motor_top.calibration(encoder_top,Upper_gear_pos[i])
-            time.sleep_ms(300)
-            for j in range(bottom_filter):
-                motor_bottom.calibration(encoder_bottom,Lower_gear_pos[j])
-                time.sleep_ms(300)
-
-
-    def taking_photo(self,motor_top,motor_bottom,top_filter,bottom_filter,encoder_top,encoder_bottom):
-        
-        top_index=0
-        bottom_index=0
-        for i in range(top_filter*bottom_filter+top_filter+bottom_filter+1):
-            if bottom_index==(bottom_filter+1):
-                bottom_index=0
-                top_index=top_index+1
-
-                motor_top.calibration(encoder_top,Upper_gear_pos[top_index])
-                time.sleep(0.5)
-
-            motor_bottom.calibration(encoder_bottom,Lower_gear_pos[bottom_index])
-            time.sleep(0.5)
-            print(f'Current combination: Top: {top_index} / Bottom: {bottom_index}')
-            print(f'We are at: {i+1} out of {top_filter*bottom_filter+top_filter+bottom_filter+1}')
-
-            time.sleep(5) # Time for add on to the finish changing its position 5 [s]
-            self.send_message("RUN")  # Send "RUN" with markers
-            time.sleep(30)  # Time for aquisition by the camera 30 [s]
-
-            bottom_index=bottom_index+1
-
-
-
-#------------------------------------------------------------------ Class instance initialization-----------------
-
-hyperspectral_mode=True
-thermography_mode=False
-
-period_time=20 #Time of halogen lamps flash [s]
-time_for_camera_initialization = 30#Time required for camera initialization [s] (Value for 2500 frames is 30) 
-
-# Trigger pin for the starting whole sequence
-button=Pin(18,Pin.IN,Pin.PULL_UP)
-
-# Config of the setup
-STEP_DELAY_US=500 # Delay between HIGH and LOW (in us)
-
-# Motors initialization
-motors=[StepperMotor(14,15,STEP_DELAY_US,10,11,12), # Upper motor
-        StepperMotor(17,16,STEP_DELAY_US,6,7,8) # Lower motor
-]
-
-motors[0].set_microstepping("sixteenth") 
-motors[1].set_microstepping("sixteenth")
-
-# First AS5600 on I2C0 (e.g. GP0 = SDA, GP1 = SCL)
-i2c0 = I2C(0, scl=Pin(1), sda=Pin(0))
-encoder_up = AS5600(i2c0) # Upper encoder
-
-
-# Second AS5600 on I2C1 (e.g. GP2 = SDA, GP3 = SCL)
-i2c1 = I2C(1, scl=Pin(3), sda=Pin(2))
-encoder_down = AS5600(i2c1) # Lower encoder
-
-
-# Initialization of setup operation
-thermo_setup=thermography_setup(13)
-
-
-#------------------------------------------------------Absolute positions for the camera
 Lower_gear_pos=[332,297.5,260.6,225.4,189,152.6,116.7,81.8,8.6]#No filter ,2000, 2150, 2300, 2450, 2600, 2750, 2900, Substrate
 Upper_gear_pos=[ 194.6,229,266.4,302.5,339.3,15.3,52.3, 86] #No filter, 500, 800, 950, 1100, 1250, 1400, 1700  
 
 
+# Class and hardware setup
+motors = [StepperMotor(14, 15, 500, 10, 11, 12),    # Top motor
+          StepperMotor(17, 16, 500, 6, 7, 8)]       # Bottom motor
 
-# -------------------------------------------- Calibration sequence --------------------------
-motors[1].calibration(encoder_down,Lower_gear_pos[0]) # Lower motor calibration
-time.sleep(0.5) 
-motors[0].calibration(encoder_up,Upper_gear_pos[0]) # Upper motor calibration
+motors[0].set_microstepping("sixteenth")
+motors[1].set_microstepping("sixteenth")
+
+i2c0 = I2C(0, scl=Pin(1), sda=Pin(0))
+i2c1 = I2C(1, scl=Pin(3), sda=Pin(2))
+
+encoder_up = AS5600(i2c0)
+encoder_down = AS5600(i2c1)
+
+# Calibration to zero (index 0_0)
+motors[1].calibration(encoder_down, Lower_gear_pos[0])
+time.sleep(0.5)
+motors[0].calibration(encoder_up, Upper_gear_pos[0])
 time.sleep(0.5)
 
-angle_up = encoder_up.read_angle_deg() # Upper encoder
-angle_down = encoder_down.read_angle_deg() # Lower encoder    
-print("Upper encoder 1:", angle_up, "Lower encoder 2:", angle_down)
+# Helper functions
+def parse_index(command):
+    try:
+        parts = command.strip().split()
+        if len(parts) == 2 and parts[0] == "ping":
+            i_str, j_str = parts[1].split('_')
+            return int(i_str), int(j_str)
+    except:
+        pass
+    return None, None
+
+# Initialize last known positions
+last_i = -1
+last_j = -1
+
+def move_to_position(i, j):
+    global last_i, last_j
+
+    if not (0 <= i < len(Upper_gear_pos) and 0 <= j < len(Lower_gear_pos)):
+        return False  # invalid index
+
+    # Move top motor if needed
+    if i != last_i:
+        print(f"Moving TOP motor to index {i} (angle {Upper_gear_pos[i]})")
+        motors[0].calibration(encoder_up, Upper_gear_pos[i])
+        last_i = i
+        time.sleep(0.5)
+    else:
+        print(f"TOP motor already at index {i}, skipping move")
+
+    # Move bottom motor if needed
+    if j != last_j:
+        print(f"Moving BOTTOM motor to index {j} (angle {Lower_gear_pos[j]})")
+        motors[1].calibration(encoder_down, Lower_gear_pos[j])
+        last_j = j
+        time.sleep(0.5)
+    else:
+        print(f"BOTTOM motor already at index {j}, skipping move")
+
+    return True
 
 
-# --------------------------------------------------------------Main loop----------------------
-while True:  
+# ------------------ Main loop ---------------------
+print("Pico ready. Waiting for commands...")
 
-    if button.value() == 0:  # Button is pressed (assuming active-low)
-        
-        if hyperspectral_mode:
-            thermo_setup.taking_photo(motors[0],motors[1],7,7,encoder_up,encoder_down)
-            print('We are finished with taking photo!')
-        elif thermography_mode:
-            thermo_setup.send_message("RUN")  # Send "RUN" with markers
-            time.sleep(time_for_camera_initialization)  # Debounce delay
-            thermo_setup.halogen_lamp(period_time)
+while True:
+    try:
+        line = sys.stdin.readline()
+        if not line:
+            continue
 
-        
-        
-        
-        
+        i, j = parse_index(line)
+
+        if i is not None and j is not None:
+            print(f"Received command: ping {i}_{j}")
+
+            success = move_to_position(i, j)
+            if success:
+                print(f"<pong {i}_{j}>")
+            else:
+                print("<error invalid index>")
+        else:
+            print("<error invalid command>")
+
+    except Exception as e:
+        print(f"<error {str(e)}>")
