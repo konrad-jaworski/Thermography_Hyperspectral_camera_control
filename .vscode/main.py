@@ -178,6 +178,7 @@ while True:
 
             success = move_to_position(i, j)
             if success:
+                time.sleep(3)
                 print(f"<pong {i}_{j}>")
             else:
                 print("<error invalid index>")
